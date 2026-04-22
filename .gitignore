@@ -1,0 +1,8 @@
+node_modules/
+.env
+.DS_Store
+server/temp/
+temp/
+*.exe
+*.o
+*.out
