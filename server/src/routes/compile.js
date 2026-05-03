@@ -10,6 +10,8 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const TEMP_DIR = path.join(__dirname, '..', '..', 'temp');
+const IS_WIN = process.platform === 'win32';
+const EXE_EXT = IS_WIN ? '.exe' : '.out';
 
 // Ensure temp dir exists
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -23,7 +25,7 @@ router.post('/', (req, res) => {
 
   const id = uuidv4().slice(0, 8);
   const srcFile = path.join(TEMP_DIR, `${id}.c`);
-  const exeFile = path.join(TEMP_DIR, `${id}.exe`);
+  const exeFile = path.join(TEMP_DIR, `${id}${EXE_EXT}`);
 
   try {
     // Write source file
@@ -52,7 +54,8 @@ router.post('/', (req, res) => {
     try {
       let output;
       if (input.trim()) {
-        output = execSync(`echo ${input} | "${exeFile}"`, {
+        const echoCmd = IS_WIN ? `echo ${input} | "${exeFile}"` : `echo '${input}' | "${exeFile}"`;
+        output = execSync(echoCmd, {
           timeout: 5000,
           encoding: 'utf-8',
           maxBuffer: 1024 * 1024

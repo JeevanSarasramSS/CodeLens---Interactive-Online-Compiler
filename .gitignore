@@ -6,3 +6,5 @@ temp/
 *.exe
 *.o
 *.out
+dist/
+.vercel/

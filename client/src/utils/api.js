@@ -18,11 +18,29 @@ export async function analyzeCode(code) {
   return res.json();
 }
 
+export async function analyzeWalkthrough(code, input = '') {
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, input, includeOutput: true })
+  });
+  return res.json();
+}
+
 export async function quickTokenize(code) {
   const res = await fetch(`${API_BASE}/analyze/tokens`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code })
+  });
+  return res.json();
+}
+
+export async function learningAction(action, params = {}) {
+  const res = await fetch(`${API_BASE}/learning`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params })
   });
   return res.json();
 }

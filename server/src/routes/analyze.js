@@ -4,6 +4,10 @@
 
 const express = require('express');
 const router = express.Router();
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const { tokenize } = require('../compiler/lexer');
 const { parse } = require('../compiler/parser');
 const { analyze } = require('../compiler/semantic');
@@ -12,8 +16,56 @@ const { explainTokens, explainAST, explainSemantic, explainIR } = require('../co
 const { optimizeIR } = require('../compiler/optimizer');
 const { generateCFG } = require('../compiler/cfgGenerator');
 
+const TEMP_DIR = path.join(__dirname, '..', '..', 'temp');
+const IS_WIN = process.platform === 'win32';
+const EXE_EXT = IS_WIN ? '.exe' : '.out';
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
+
+// Helper: compile and run code, returns output result object
+function executeCode(code, input = '') {
+  const id = uuidv4().slice(0, 8);
+  const srcFile = path.join(TEMP_DIR, `${id}.c`);
+  const exeFile = path.join(TEMP_DIR, `${id}${EXE_EXT}`);
+
+  try {
+    fs.writeFileSync(srcFile, code);
+
+    try {
+      execSync(`gcc "${srcFile}" -o "${exeFile}" -lm 2>&1`, {
+        timeout: 10000,
+        encoding: 'utf-8'
+      });
+    } catch (compileErr) {
+      const stderr = compileErr.stdout || compileErr.stderr || compileErr.message;
+      const cleanError = stderr.replace(new RegExp(srcFile.replace(/\\/g, '\\\\'), 'g'), 'source.c');
+      return { success: false, phase: 'compilation', error: cleanError, output: '' };
+    }
+
+    const startTime = Date.now();
+    try {
+      let output;
+      if (input.trim()) {
+        const echoCmd = IS_WIN ? `echo ${input} | "${exeFile}"` : `echo '${input}' | "${exeFile}"`;
+        output = execSync(echoCmd, {
+          timeout: 5000, encoding: 'utf-8', maxBuffer: 1024 * 1024
+        });
+      } else {
+        output = execSync(`"${exeFile}"`, {
+          timeout: 5000, encoding: 'utf-8', maxBuffer: 1024 * 1024
+        });
+      }
+      return { success: true, output: output || '(no output)', executionTime: `${Date.now() - startTime}ms`, error: '' };
+    } catch (runErr) {
+      return { success: false, phase: 'runtime', error: runErr.message || 'Runtime error', output: runErr.stdout || '', executionTime: `${Date.now() - startTime}ms` };
+    }
+  } finally {
+    try { if (fs.existsSync(srcFile)) fs.unlinkSync(srcFile); } catch {}
+    try { if (fs.existsSync(exeFile)) fs.unlinkSync(exeFile); } catch {}
+  }
+}
+
 router.post('/', (req, res) => {
-  const { code } = req.body;
+  const { code, input = '', includeOutput = false } = req.body;
 
   if (!code || !code.trim()) {
     return res.status(400).json({ error: 'No code provided' });
@@ -46,6 +98,12 @@ router.post('/', (req, res) => {
       ir: explainIR(irCode)
     };
 
+    // Phase 8 (optional): Execute code and include output
+    let output = null;
+    if (includeOutput) {
+      output = executeCode(code, input);
+    }
+
     return res.json({
       success: true,
       phases: {
@@ -65,7 +123,8 @@ router.post('/', (req, res) => {
         },
         optimization: optimizationResult,
         cfg,
-        explanations
+        explanations,
+        ...(output ? { output } : {})
       }
     });
   } catch (err) {

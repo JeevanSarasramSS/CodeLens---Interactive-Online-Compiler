@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const compileRoute = require('./routes/compile');
 const analyzeRoute = require('./routes/analyze');
+const learningRoute = require('./routes/learning');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -11,6 +12,7 @@ app.use(express.json({ limit: '1mb' }));
 
 app.use('/api/compile', compileRoute);
 app.use('/api/analyze', analyzeRoute);
+app.use('/api/learning', learningRoute);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });

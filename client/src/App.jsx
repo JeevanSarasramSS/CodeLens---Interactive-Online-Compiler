@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import Header from './components/Header';
 import PhaseNavigator from './components/PhaseNavigator';
 import CodeEditor, { DEFAULT_CODE } from './components/CodeEditor';
@@ -14,7 +14,9 @@ import TemplateDrawer from './components/TemplateDrawer';
 import StdinInput from './components/StdinInput';
 import StatusBar from './components/StatusBar';
 import ToastContainer, { useToast } from './components/Toast';
-import { runCode, analyzeCode, quickTokenize } from './utils/api';
+import PipelineViewer from './components/PipelineViewer';
+import LearningMode from './components/LearningMode';
+import { runCode, analyzeCode, analyzeWalkthrough, quickTokenize } from './utils/api';
 
 const TABS = [
   { id: 'lexical', label: 'Tokens', icon: '🔤' },
@@ -28,6 +30,7 @@ const TABS = [
 ];
 
 export default function App() {
+  const [appMode, setAppMode] = useState('compiler');
   const [code, setCode] = useState(DEFAULT_CODE);
   const [activeTab, setActiveTab] = useState('output');
   const [isLoading, setIsLoading] = useState(false);
@@ -41,6 +44,11 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [status, setStatus] = useState('Ready');
   const [prevTab, setPrevTab] = useState(null);
+
+  // === Walkthrough State ===
+  const [walkthroughMode, setWalkthroughMode] = useState(false);
+  const [walkthroughData, setWalkthroughData] = useState(null);
+  const [walkthroughOutput, setWalkthroughOutput] = useState(null);
 
   const editorRef = useRef(null);
   const debounceRef = useRef(null);
@@ -74,6 +82,7 @@ export default function App() {
   // === Keyboard Shortcuts ===
   useEffect(() => {
     const handler = (e) => {
+      if (walkthroughMode) return; // Let PipelineViewer handle its own keys
       if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
         handleAnalyze();
@@ -84,7 +93,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [code, stdinInput]);
+  }, [code, stdinInput, walkthroughMode]);
 
   // === Bidirectional Mapping: Token Click → Editor Highlight ===
   const handleTokenClick = useCallback((token, idx) => {
@@ -173,6 +182,35 @@ export default function App() {
     setIsLoading(false);
   }, [code, stdinInput, switchTab, addToast]);
 
+  // === Full Compilation Walkthrough ===
+  const handleWalkthrough = useCallback(async () => {
+    setIsLoading(true);
+    setStatus('Preparing walkthrough...');
+    try {
+      const result = await analyzeWalkthrough(code, stdinInput);
+      if (result.success) {
+        setWalkthroughData(result.phases);
+        setWalkthroughOutput(result.phases.output || null);
+        setWalkthroughMode(true);
+        setStatus('Walkthrough ready');
+        addToast('Walkthrough loaded — navigate through all compiler phases', 'success');
+      } else {
+        setStatus('Walkthrough failed');
+        addToast('Walkthrough failed: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (err) {
+      setStatus('Connection error');
+      addToast('Failed to connect to server', 'error');
+    }
+    setIsLoading(false);
+  }, [code, stdinInput, addToast]);
+
+  const exitWalkthrough = useCallback(() => {
+    setWalkthroughMode(false);
+    setStatus('Ready');
+    addToast('Returned to editor mode', 'info');
+  }, [addToast]);
+
   // === Template Selection ===
   const handleSelectTemplate = useCallback((template) => {
     setCode(template.code);
@@ -197,9 +235,68 @@ export default function App() {
   const optCount = analysisData?.optimization?.stats?.applied;
   const cfgBlocks = analysisData?.cfg?.blocks?.length;
 
+  // === LEARNING MODE ===
+  if (appMode === 'learning') {
+    return <LearningMode onSwitchMode={() => setAppMode('compiler')} />;
+  }
+
+  // === WALKTHROUGH MODE ===
+  if (walkthroughMode && walkthroughData) {
+    return (
+      <div className="app-container">
+        <header className="app-header">
+          <div className="header-left">
+            <div className="header-logo">⚡</div>
+            <span className="header-title">CodeLens — Compilation Walkthrough</span>
+            <span className="header-badge wt-badge-active">Guided Mode</span>
+          </div>
+        </header>
+        <div className="wt-layout">
+          {/* Left: Locked Editor */}
+          <div className="editor-section wt-editor-locked">
+            <div className="editor-panel">
+              <div className="editor-header">
+                <div className="editor-file-tab">
+                  <span className="editor-file-dot dot-c" />
+                  main.c
+                </div>
+                <div className="wt-locked-badge">
+                  <span>🔒</span> Read Only
+                </div>
+              </div>
+              <div className="editor-wrapper">
+                <CodeEditor
+                  code={code}
+                  onCodeChange={() => {}}
+                  onRun={() => {}}
+                  onAnalyze={() => {}}
+                  isLoading={false}
+                  editorRef={editorRef}
+                  onCursorChange={() => {}}
+                  readOnly={true}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Pipeline Viewer */}
+          <div className="wt-viewer-section">
+            <PipelineViewer
+              data={walkthroughData}
+              outputData={walkthroughOutput}
+              onExit={exitWalkthrough}
+            />
+          </div>
+        </div>
+        <ToastContainer toasts={toasts} />
+      </div>
+    );
+  }
+
+  // === NORMAL MODE ===
   return (
     <div className="app-container">
-      <Header onOpenTemplates={() => setDrawerOpen(true)} />
+      <Header onOpenTemplates={() => setDrawerOpen(true)} appMode={appMode} onSwitchMode={setAppMode} />
       <PhaseNavigator
         activePhase={activeTab}
         completedPhases={completedPhases}
@@ -215,6 +312,7 @@ export default function App() {
             isLoading={isLoading}
             editorRef={editorRef}
             onCursorChange={handleCursorChange}
+            onWalkthrough={handleWalkthrough}
           />
           <StdinInput value={stdinInput} onChange={setStdinInput} />
         </div>

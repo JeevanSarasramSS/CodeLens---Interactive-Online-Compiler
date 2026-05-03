@@ -21,7 +21,7 @@ int main() {
     return 0;
 }`;
 
-export default function CodeEditor({ code, onCodeChange, onRun, onAnalyze, isLoading, editorRef, onCursorChange }) {
+export default function CodeEditor({ code, onCodeChange, onRun, onAnalyze, isLoading, editorRef, onCursorChange, onWalkthrough, readOnly }) {
   const monacoRef = useRef(null);
 
   const handleEditorDidMount = useCallback((editor, monaco) => {
@@ -54,7 +54,7 @@ export default function CodeEditor({ code, onCodeChange, onRun, onAnalyze, isLoa
           defaultLanguage="c"
           theme="vs-dark"
           value={code ?? DEFAULT_CODE}
-          onChange={(val) => onCodeChange(val || '')}
+          onChange={(val) => !readOnly && onCodeChange(val || '')}
           onMount={handleEditorDidMount}
           options={{
             fontSize: 14,
@@ -69,17 +69,25 @@ export default function CodeEditor({ code, onCodeChange, onRun, onAnalyze, isLoa
             lineNumbersMinChars: 3,
             glyphMargin: false,
             automaticLayout: true,
+            readOnly: !!readOnly,
           }}
         />
       </div>
-      <div className="editor-actions">
-        <button className="btn btn-run" onClick={onRun} disabled={isLoading}>
-          <span className="btn-icon">▶</span> Run Code
-        </button>
-        <button className="btn btn-analyze" onClick={onAnalyze} disabled={isLoading}>
-          <span className="btn-icon">🔬</span> Run with Compilation Steps
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="editor-actions">
+          <button className="btn btn-run" onClick={onRun} disabled={isLoading}>
+            <span className="btn-icon">▶</span> Run Code
+          </button>
+          <button className="btn btn-analyze" onClick={onAnalyze} disabled={isLoading}>
+            <span className="btn-icon">🔬</span> Run with Compilation Steps
+          </button>
+          {onWalkthrough && (
+            <button className="btn btn-walkthrough" onClick={onWalkthrough} disabled={isLoading}>
+              <span className="btn-icon">🎯</span> Full Compilation Walkthrough
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
